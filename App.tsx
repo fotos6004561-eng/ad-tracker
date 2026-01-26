@@ -18,7 +18,7 @@ import { ReferencesPage } from './pages/ReferencesPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { OffersPage } from './pages/OffersPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { EntriesPage } from './pages/EntriesPage'; // Novo import
+import { EntriesPage } from './pages/EntriesPage'; 
 import { AdEntry, ExtraExpense, Offer, DateRangeType, RecurringExpense } from './types';
 import { supabase } from './services/supabaseClient';
 
@@ -64,7 +64,7 @@ const App: React.FC = () => {
     try {
       const [offersRes, adsRes, expensesRes, recurringRes] = await Promise.all([
         supabase.from('offers').select('*'),
-        supabase.from('ads').select('*'),
+        supabase.from('marketing_data').select('*'),
         supabase.from('expenses').select('*'),
         supabase.from('recurring_expenses').select('*')
       ]);
