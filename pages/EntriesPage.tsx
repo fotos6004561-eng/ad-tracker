@@ -37,6 +37,21 @@ export const EntriesPage: React.FC = () => {
     description: ''
   });
 
+  // Função para limpar inputs de moeda (ex: transforma "1.234,56" ou "R$ 1.234,56" em "1234.56")
+  const sanitizeCurrency = (value: string) => {
+    // Remove "R$", espaços e qualquer caractere que não seja número, ponto ou vírgula
+    let clean = value.replace(/R\$/g, '').replace(/\s/g, '');
+    
+    // Se houver vírgula, assumimos padrão brasileiro
+    if (clean.includes(',')) {
+      // Remove pontos de milhar e troca a vírgula decimal por ponto
+      clean = clean.replace(/\./g, '').replace(',', '.');
+    }
+    
+    // Remove qualquer coisa que não seja dígito ou ponto decimal final
+    return clean.replace(/[^0-9.]/g, '');
+  };
+
   const fetchData = async () => {
     if (!supabase) return;
     setLoading(true);
@@ -68,8 +83,8 @@ export const EntriesPage: React.FC = () => {
         const { error } = await supabase.from('marketing_data').insert([{
           date: adForm.date,
           offer_id: adForm.offerId,
-          spend: parseFloat(adForm.spend),
-          revenue: parseFloat(adForm.revenue)
+          spend: parseFloat(adForm.spend) || 0,
+          revenue: parseFloat(adForm.revenue) || 0
         }]);
         if (!error) {
           setAdForm({ ...adForm, spend: '', revenue: '' });
@@ -94,7 +109,7 @@ export const EntriesPage: React.FC = () => {
         const { error } = await supabase.from('expenses').insert([{
           date: expenseForm.date,
           category: expenseForm.category,
-          amount: parseFloat(expenseForm.amount),
+          amount: parseFloat(expenseForm.amount) || 0,
           description: expenseForm.description
         }]);
         if (!error) {
@@ -113,23 +128,17 @@ export const EntriesPage: React.FC = () => {
   const deleteAd = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    
     if (!confirm('Excluir este registro de anúncio?')) return;
-    
     const previousAds = [...ads];
     setAds(current => current.filter(ad => ad.id !== id));
-
     if (supabase) {
       try {
         const { error } = await supabase.from('marketing_data').delete().eq('id', id);
         if (error) {
-          console.error("Erro Supabase:", error);
-          alert("Erro no servidor ao excluir. Verifique se renomeou a tabela para 'marketing_data'.");
+          alert("Erro no servidor ao excluir.");
           setAds(previousAds);
         }
       } catch (err: any) {
-        console.error("Erro de conexão:", err);
-        alert("Falha crítica na conexão. O registro foi restaurado.");
         setAds(previousAds);
       }
     }
@@ -138,21 +147,14 @@ export const EntriesPage: React.FC = () => {
   const deleteExpense = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-
     if (!confirm('Excluir esta despesa?')) return;
-
     const previousExpenses = [...expenses];
     setExpenses(current => current.filter(exp => exp.id !== id));
-
     if (supabase) {
       try {
         const { error } = await supabase.from('expenses').delete().eq('id', id);
-        if (error) {
-          console.error("Erro Supabase:", error);
-          setExpenses(previousExpenses);
-        }
+        if (error) setExpenses(previousExpenses);
       } catch (err) {
-        console.error(err);
         setExpenses(previousExpenses);
       }
     }
@@ -197,14 +199,30 @@ export const EntriesPage: React.FC = () => {
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gasto</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-500 font-bold text-sm">R$</span>
-                  <input required type="number" step="0.01" value={adForm.spend} onChange={e => setAdForm({...adForm, spend: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 shadow-inner" placeholder="0,00"/>
+                  <input 
+                    required 
+                    type="text" 
+                    inputMode="decimal"
+                    value={adForm.spend} 
+                    onChange={e => setAdForm({...adForm, spend: sanitizeCurrency(e.target.value)})} 
+                    className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 shadow-inner" 
+                    placeholder="0.00"
+                  />
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Receita</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 font-bold text-sm">R$</span>
-                  <input required type="number" step="0.01" value={adForm.revenue} onChange={e => setAdForm({...adForm, revenue: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 shadow-inner" placeholder="0,00"/>
+                  <input 
+                    required 
+                    type="text" 
+                    inputMode="decimal"
+                    value={adForm.revenue} 
+                    onChange={e => setAdForm({...adForm, revenue: sanitizeCurrency(e.target.value)})} 
+                    className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 shadow-inner" 
+                    placeholder="0.00"
+                  />
                 </div>
               </div>
             </div>
@@ -267,13 +285,21 @@ export const EntriesPage: React.FC = () => {
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Valor do Gasto</label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-500 font-bold text-sm">R$</span>
-                <input required type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm({...expenseForm, amount: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 shadow-inner" placeholder="0,00"/>
+                <input 
+                  required 
+                  type="text" 
+                  inputMode="decimal"
+                  value={expenseForm.amount} 
+                  onChange={e => setExpenseForm({...expenseForm, amount: sanitizeCurrency(e.target.value)})} 
+                  className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 shadow-inner" 
+                  placeholder="0.00"
+                />
               </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição (Opcional)</label>
-              <input type="text" value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-medium focus:ring-2 focus:ring-rose-500 shadow-inner" placeholder="Ex: BM comprada com o João"/>
+              <input type="text" value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-medium focus:ring-2 focus:ring-rose-500 shadow-inner" placeholder="Ex: BM comprada"/>
             </div>
 
             <button type="submit" disabled={submitting} className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-[0.2em] py-4 rounded-2xl shadow-xl hover:bg-black hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
