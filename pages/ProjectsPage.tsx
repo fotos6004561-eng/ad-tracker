@@ -94,6 +94,19 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
     if (supabase) await supabase.from('tasks').update({ completed: newStatus, completed_at: completedAt }).eq('id', task.id);
   };
 
+  const deleteTask = async (taskId: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta tarefa da operação?')) return;
+
+    if (supabase) {
+      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+      if (error) {
+        alert('Erro ao excluir tarefa. Tente novamente.');
+        return;
+      }
+    }
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+  };
+
   const saveTaskDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTask) return;
@@ -173,7 +186,10 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
                           </div>
                         </div>
                       </div>
-                      <button onClick={() => {setEditingTask({...task}); setIsTaskModalOpen(true);}} className="p-4 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-2xl transition-all"><MessageSquare size={22}/></button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => {setEditingTask({...task}); setIsTaskModalOpen(true);}} className="p-4 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-2xl transition-all"><MessageSquare size={22}/></button>
+                        <button onClick={() => deleteTask(task.id)} className="p-4 text-gray-200 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={20}/></button>
+                      </div>
                     </div>
                   ))}
                   {projectTasks.length === 0 && (
