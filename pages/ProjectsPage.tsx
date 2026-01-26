@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Briefcase, CheckCircle2, Circle, User, Plus, Trash2, 
   LayoutGrid, Loader2, Users, BarChart3, MessageSquare, 
-  X, UserCheck, ShieldCheck, CornerDownRight, TrendingUp
+  X, UserCheck, ShieldCheck, CornerDownRight, TrendingUp,
+  FolderPlus
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
@@ -31,8 +32,15 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState('');
+  
+  // Modals
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  
+  // States for forms
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -63,6 +71,53 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  const addProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProjectName.trim() || isCreatingProject) return;
+    setIsCreatingProject(true);
+
+    const projectPayload = {
+      name: newProjectName.trim(),
+      status: 'Ativo',
+      progress: 0
+    };
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('projects').insert([projectPayload]).select();
+        if (data) {
+          setProjects([data[0], ...projects]);
+          setSelectedId(data[0].id);
+          setIsProjectModalOpen(false);
+          setNewProjectName('');
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      const mockId = Math.random().toString();
+      const newProj = { ...projectPayload, id: mockId } as Project;
+      setProjects([newProj, ...projects]);
+      setSelectedId(mockId);
+      setIsProjectModalOpen(false);
+      setNewProjectName('');
+    }
+    setIsCreatingProject(false);
+  };
+
+  const deleteProject = async (projectId: string) => {
+    if (!confirm('Excluir esta operação e todas as suas tarefas?')) return;
+    
+    if (supabase) {
+      await supabase.from('tasks').delete().eq('project_id', projectId);
+      await supabase.from('projects').delete().eq('id', projectId);
+    }
+    
+    setProjects(projects.filter(p => p.id !== projectId));
+    setTasks(tasks.filter(t => t.project_id !== projectId));
+    if (selectedId === projectId) setSelectedId(projects[0]?.id || null);
+  };
 
   // --- Lógica de Produtividade (Gráfico) ---
   const productivityData = useMemo(() => {
@@ -130,7 +185,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
   };
 
   const deleteTask = async (taskId: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta tarefa da operação?')) return;
+    if (!confirm('Excluir esta tarefa?')) return;
     if (supabase) await supabase.from('tasks').delete().eq('id', taskId);
     setTasks(prev => prev.filter(t => t.id !== taskId));
   };
@@ -199,38 +254,57 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         
-        {/* SIDEBAR DE PROJETOS COM BARRA DE PROGRESSO */}
+        {/* SIDEBAR DE PROJETOS */}
         <div className="lg:col-span-4 space-y-4">
           <div className="px-4 py-2">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Operações Ativas</h3>
+            <div className="flex justify-between items-center mb-6">
+               <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Operações Ativas</h3>
+               <button 
+                onClick={() => setIsProjectModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+               >
+                 <Plus size={14}/> Nova
+               </button>
+            </div>
+            
             {projectsWithProgress.map((project) => (
-              <button key={project.id} onClick={() => setSelectedId(project.id)} className={`w-full text-left p-6 rounded-[2.5rem] border-2 mb-4 transition-all relative overflow-hidden ${selectedId === project.id ? 'bg-white border-indigo-600 shadow-xl' : 'bg-white border-transparent shadow-sm hover:border-gray-200'}`}>
-                <div className="flex justify-between items-start mb-3">
-                   <h4 className="font-black text-gray-900 truncate uppercase tracking-tight flex-1">{project.name}</h4>
-                   <span className="text-[11px] font-black text-indigo-600 ml-2">{project.progress}%</span>
-                </div>
-                
-                {/* Barra de Progresso Sutil */}
-                <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                   <div 
-                    className="h-full bg-indigo-600 transition-all duration-1000 ease-out" 
-                    style={{ width: `${project.progress}%` }}
-                   />
-                </div>
+              <div key={project.id} className="relative group mb-4">
+                <button 
+                  onClick={() => setSelectedId(project.id)} 
+                  className={`w-full text-left p-6 rounded-[2.5rem] border-2 transition-all relative overflow-hidden ${selectedId === project.id ? 'bg-white border-indigo-600 shadow-xl' : 'bg-white border-transparent shadow-sm hover:border-gray-200'}`}
+                >
+                  <div className="flex justify-between items-start mb-3">
+                     <h4 className="font-black text-gray-900 truncate uppercase tracking-tight flex-1 pr-6">{project.name}</h4>
+                     <span className="text-[11px] font-black text-indigo-600 ml-2">{project.progress}%</span>
+                  </div>
+                  
+                  <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                     <div 
+                      className="h-full bg-indigo-600 transition-all duration-1000 ease-out" 
+                      style={{ width: `${project.progress}%` }}
+                     />
+                  </div>
 
-                <div className="flex items-center gap-2 mt-4">
-                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${project.progress === 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                    {project.progress === 100 ? 'Concluído' : project.status}
-                  </span>
-                </div>
-              </button>
+                  <div className="flex items-center gap-2 mt-4">
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${project.progress === 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                      {project.progress === 100 ? 'Concluído' : project.status}
+                    </span>
+                  </div>
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); deleteProject(project.id); }}
+                  className="absolute top-6 right-6 p-2 text-gray-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <Trash2 size={16}/>
+                </button>
+              </div>
             ))}
           </div>
         </div>
 
         {/* LISTA DE TAREFAS */}
         <div className="lg:col-span-8">
-          {selectedProject && (
+          {selectedProject ? (
             <div className="bg-white border border-gray-200 rounded-[3rem] p-10 shadow-2xl flex flex-col min-h-[600px]">
               <div className="flex justify-between items-center border-b border-gray-100 pb-8 mb-8">
                 <div>
@@ -277,10 +351,49 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
                 </div>
               </div>
             </div>
+          ) : (
+            <div className="bg-gray-50/50 rounded-[3rem] p-20 text-center border-4 border-dashed border-gray-200">
+               <Briefcase size={48} className="mx-auto text-gray-200 mb-6"/>
+               <h3 className="text-xl font-black text-gray-300 uppercase tracking-widest">Selecione uma operação para gerir</h3>
+            </div>
           )}
         </div>
       </div>
 
+      {/* MODAL NOVA OPERAÇÃO */}
+      {isProjectModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl overflow-hidden animate-scale-in">
+             <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h3 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-2"><FolderPlus size={20} className="text-indigo-600"/> Iniciar Operação</h3>
+                <button onClick={() => setIsProjectModalOpen(false)} className="p-2 text-gray-400 hover:bg-gray-100 rounded-xl transition-colors"><X size={24}/></button>
+             </div>
+             <form onSubmit={addProject} className="p-10 space-y-8">
+                <div>
+                   <label className="block text-[11px] font-black text-gray-400 uppercase tracking-widest mb-3">Nome da Operação / Projeto</label>
+                   <input 
+                    required 
+                    autoFocus
+                    type="text" 
+                    value={newProjectName} 
+                    onChange={e => setNewProjectName(e.target.value)} 
+                    className="w-full bg-gray-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-indigo-600 shadow-inner"
+                    placeholder="Ex: Escala de Verão 2024"
+                   />
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={isCreatingProject}
+                  className="w-full bg-indigo-600 text-white font-black uppercase text-xs tracking-widest py-5 rounded-[1.5rem] shadow-xl hover:bg-indigo-700 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"
+                >
+                  {isCreatingProject ? <Loader2 className="animate-spin"/> : 'Confirmar Lançamento'}
+                </button>
+             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIÇÃO TAREFA */}
       {isTaskModalOpen && editingTask && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl overflow-hidden animate-scale-in">
