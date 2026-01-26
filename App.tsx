@@ -18,6 +18,7 @@ import { ReferencesPage } from './pages/ReferencesPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { OffersPage } from './pages/OffersPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { EntriesPage } from './pages/EntriesPage'; // Novo import
 import { AdEntry, ExtraExpense, Offer, DateRangeType, RecurringExpense } from './types';
 import { supabase } from './services/supabaseClient';
 
@@ -167,6 +168,7 @@ const App: React.FC = () => {
         </header>
 
         {activeTab === 'dashboard' && <Dashboard ads={ads} expenses={expenses} recurringExpenses={recurringExpenses} offers={offers} selectedOfferId={selectedOfferId} dateRange={dateRange} />}
+        {activeTab === 'entries' && <EntriesPage />}
         {activeTab === 'references' && <ReferencesPage />}
         {activeTab === 'projects' && <ProjectsPage currentUser={currentUser} />}
         {activeTab === 'offers' && <OffersPage />}
