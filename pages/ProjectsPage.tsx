@@ -3,8 +3,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Briefcase, CheckCircle2, Circle, User, Plus, Trash2, 
   LayoutGrid, Loader2, Users, BarChart3, MessageSquare, 
-  X, UserCheck, ShieldCheck, CornerDownRight
+  X, UserCheck, ShieldCheck, CornerDownRight, TrendingUp
 } from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
+} from 'recharts';
 import { supabase } from '../services/supabaseClient';
 import { Project, Task, TeamMember } from '../types';
 
@@ -12,7 +15,6 @@ interface ProjectsPageProps {
   currentUser: string;
 }
 
-// Lista oficial de membros da equipe (mesmos do login)
 const TEAM_MEMBERS_LIST: TeamMember[] = [
   { id: 'JOÃO PEDRO', name: 'JOÃO PEDRO', role: 'Operação' },
   { id: 'ARTHUR', name: 'ARTHUR', role: 'Operação' },
@@ -20,14 +22,13 @@ const TEAM_MEMBERS_LIST: TeamMember[] = [
 ];
 
 const MOCK_PROJECTS: Project[] = [
-  { id: 'p1', name: 'Operação Principal', status: 'Ativo', progress: 100 }
+  { id: 'p1', name: 'Operação Principal', status: 'Ativo', progress: 0 }
 ];
 
 export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeSubTab, setActiveSubTab] = useState<'management'>('management');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState('');
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -52,8 +53,8 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
       setProjects(hasData ? projRes.data! : MOCK_PROJECTS);
       setTasks(taskRes.data || []);
       
-      if (hasData) setSelectedId(projRes.data![0].id);
-      else setSelectedId('p1');
+      if (hasData && !selectedId) setSelectedId(projRes.data![0].id);
+      else if (!selectedId) setSelectedId('p1');
     } catch (e) {
       setProjects(MOCK_PROJECTS);
     } finally {
@@ -63,7 +64,41 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
 
   useEffect(() => { fetchData(); }, []);
 
-  const selectedProject = projects.find(p => p.id === selectedId);
+  // --- Lógica de Produtividade (Gráfico) ---
+  const productivityData = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().split('T')[0];
+    });
+
+    return last7Days.map(date => {
+      const completedCount = tasks.filter(t => 
+        t.completed && 
+        t.completed_at && 
+        t.completed_at.split('T')[0] === date
+      ).length;
+
+      const [y, m, d] = date.split('-');
+      return {
+        date,
+        label: `${d}/${m}`,
+        completed: completedCount
+      };
+    });
+  }, [tasks]);
+
+  // --- Lógica de Progresso por Projeto ---
+  const projectsWithProgress = useMemo(() => {
+    return projects.map(p => {
+      const pTasks = tasks.filter(t => t.project_id === p.id);
+      const completed = pTasks.filter(t => t.completed).length;
+      const progress = pTasks.length > 0 ? Math.round((completed / pTasks.length) * 100) : 0;
+      return { ...p, progress };
+    });
+  }, [projects, tasks]);
+
+  const selectedProject = projectsWithProgress.find(p => p.id === selectedId);
   const projectTasks = tasks.filter(t => t.project_id === selectedId);
 
   const addTask = async (e: React.FormEvent) => {
@@ -96,31 +131,18 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
 
   const deleteTask = async (taskId: string) => {
     if (!confirm('Tem certeza que deseja excluir esta tarefa da operação?')) return;
-
-    if (supabase) {
-      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-      if (error) {
-        alert('Erro ao excluir tarefa. Tente novamente.');
-        return;
-      }
-    }
+    if (supabase) await supabase.from('tasks').delete().eq('id', taskId);
     setTasks(prev => prev.filter(t => t.id !== taskId));
   };
 
   const saveTaskDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTask) return;
-
     const originalTask = tasks.find(t => t.id === editingTask.id);
     let updatedTask = { ...editingTask };
 
-    // Registra quem editou as instruções ou notas
-    if (editingTask.instructions !== originalTask?.instructions) {
-      updatedTask.instruction_author = currentUser;
-    }
-    if (editingTask.assignee_notes !== originalTask?.assignee_notes) {
-      updatedTask.notes_author = currentUser;
-    }
+    if (editingTask.instructions !== originalTask?.instructions) updatedTask.instruction_author = currentUser;
+    if (editingTask.assignee_notes !== originalTask?.assignee_notes) updatedTask.notes_author = currentUser;
 
     if (supabase) {
       await supabase.from('tasks').update({
@@ -141,48 +163,105 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
 
   return (
     <div className="space-y-8 animate-fade-in pb-20">
-      <div className="flex gap-2 bg-white p-2 rounded-2xl border border-gray-200 w-fit shadow-sm">
-        <button onClick={() => setActiveSubTab('management')} className="flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all bg-indigo-600 text-white shadow-xl shadow-indigo-100">
-          <LayoutGrid size={16} /> Gestão de Tarefas
-        </button>
+      
+      {/* HEADER E GRÁFICO DE PRODUTIVIDADE */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1 bg-white p-8 rounded-[2.5rem] border border-gray-200 shadow-sm flex flex-col justify-center">
+           <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mb-4">
+              <TrendingUp size={24}/>
+           </div>
+           <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tighter leading-none">Performance Semanal</h3>
+           <p className="text-gray-400 text-xs font-bold uppercase mt-2 tracking-widest">Tarefas entregues pela equipe</p>
+           <div className="mt-6">
+              <span className="text-4xl font-black text-indigo-600">{tasks.filter(t => t.completed).length}</span>
+              <span className="text-gray-300 font-black text-lg ml-2 uppercase">Total</span>
+           </div>
+        </div>
+        
+        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-gray-200 shadow-sm h-[220px]">
+           <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={productivityData}>
+                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                 <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold', fill: '#94a3b8'}} dy={10} />
+                 <Tooltip 
+                    cursor={{fill: '#f8fafc'}}
+                    contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold'}}
+                 />
+                 <Bar dataKey="completed" name="Concluídas" radius={[6, 6, 0, 0]} barSize={40}>
+                    {productivityData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.completed > 0 ? '#4f46e5' : '#e2e8f0'} />
+                    ))}
+                 </Bar>
+              </BarChart>
+           </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+        
+        {/* SIDEBAR DE PROJETOS COM BARRA DE PROGRESSO */}
         <div className="lg:col-span-4 space-y-4">
           <div className="px-4 py-2">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Projetos Ativos</h3>
-            {projects.map((project) => (
-              <button key={project.id} onClick={() => setSelectedId(project.id)} className={`w-full text-left p-6 rounded-[2rem] border-2 mb-4 transition-all ${selectedId === project.id ? 'bg-white border-indigo-600 shadow-xl' : 'bg-white border-transparent shadow-sm hover:border-gray-200'}`}>
-                <h4 className="font-black text-gray-900 mb-1 truncate uppercase tracking-tight">{project.name}</h4>
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase bg-indigo-50 text-indigo-600">{project.status}</span>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Operações Ativas</h3>
+            {projectsWithProgress.map((project) => (
+              <button key={project.id} onClick={() => setSelectedId(project.id)} className={`w-full text-left p-6 rounded-[2.5rem] border-2 mb-4 transition-all relative overflow-hidden ${selectedId === project.id ? 'bg-white border-indigo-600 shadow-xl' : 'bg-white border-transparent shadow-sm hover:border-gray-200'}`}>
+                <div className="flex justify-between items-start mb-3">
+                   <h4 className="font-black text-gray-900 truncate uppercase tracking-tight flex-1">{project.name}</h4>
+                   <span className="text-[11px] font-black text-indigo-600 ml-2">{project.progress}%</span>
+                </div>
+                
+                {/* Barra de Progresso Sutil */}
+                <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                   <div 
+                    className="h-full bg-indigo-600 transition-all duration-1000 ease-out" 
+                    style={{ width: `${project.progress}%` }}
+                   />
+                </div>
+
+                <div className="flex items-center gap-2 mt-4">
+                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${project.progress === 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                    {project.progress === 100 ? 'Concluído' : project.status}
+                  </span>
                 </div>
               </button>
             ))}
           </div>
         </div>
 
+        {/* LISTA DE TAREFAS */}
         <div className="lg:col-span-8">
           {selectedProject && (
-            <div className="bg-white border border-gray-200 rounded-[2.5rem] p-10 shadow-2xl flex flex-col">
+            <div className="bg-white border border-gray-200 rounded-[3rem] p-10 shadow-2xl flex flex-col min-h-[600px]">
               <div className="flex justify-between items-center border-b border-gray-100 pb-8 mb-8">
-                <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter">{selectedProject.name}</h2>
+                <div>
+                   <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter">{selectedProject.name}</h2>
+                   <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Gestão de Fluxo e Micro-Gerenciamento</p>
+                </div>
+                <div className="text-right">
+                   <span className="text-2xl font-black text-indigo-600">{selectedProject.progress}%</span>
+                   <p className="text-[9px] font-black text-gray-300 uppercase">Concluído</p>
+                </div>
               </div>
+
               <div className="space-y-8">
                 <form onSubmit={addTask} className="flex gap-4">
                   <input type="text" placeholder="Qual a próxima ação da operação?" value={newTaskText} onChange={(e) => setNewTaskText(e.target.value)} className="flex-1 bg-gray-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-indigo-600 outline-none shadow-inner" />
                   <button type="submit" className="px-8 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all">Add</button>
                 </form>
+
                 <div className="space-y-4">
                   {projectTasks.map((task) => (
-                    <div key={task.id} className="group flex items-center justify-between p-6 rounded-[2rem] border bg-white border-gray-100 hover:border-indigo-200 transition-all shadow-sm">
+                    <div key={task.id} className="group flex items-center justify-between p-6 rounded-[2.5rem] border bg-white border-gray-100 hover:border-indigo-200 transition-all shadow-sm">
                       <div className="flex items-center gap-6">
-                        <button onClick={() => toggleTask(task)} className="transition-transform active:scale-90">{task.completed ? <CheckCircle2 size={32} className="text-emerald-500" /> : <Circle size={32} className="text-gray-200" />}</button>
+                        <button onClick={() => toggleTask(task)} className="transition-transform active:scale-90">
+                           {task.completed ? <CheckCircle2 size={32} className="text-emerald-500" /> : <Circle size={32} className="text-gray-200" />}
+                        </button>
                         <div>
                           <span className={`text-lg font-bold ${task.completed ? 'line-through text-gray-300' : 'text-gray-800'}`}>{task.text}</span>
                           <div className="flex items-center gap-4 mt-2 text-[10px] font-black uppercase tracking-widest text-indigo-600">
                              {task.instruction_author && <div className="flex items-center gap-1"><ShieldCheck size={12}/> {task.instruction_author}</div>}
                              {task.assignee_id && <div className="flex items-center gap-1 text-gray-400">| RESP: {task.assignee_id}</div>}
+                             {task.completed && task.completed_at && <div className="flex items-center gap-1 text-emerald-500">| OK: {new Date(task.completed_at).toLocaleDateString('pt-BR')}</div>}
                           </div>
                         </div>
                       </div>
@@ -193,7 +272,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ currentUser }) => {
                     </div>
                   ))}
                   {projectTasks.length === 0 && (
-                    <div className="py-10 text-center text-gray-300 font-bold uppercase text-xs tracking-widest border-2 border-dashed border-gray-100 rounded-[2rem]">Nenhuma tarefa ativa</div>
+                    <div className="py-20 text-center text-gray-300 font-bold uppercase text-xs tracking-widest border-4 border-dashed border-gray-50 rounded-[3rem]">Nenhuma tarefa ativa</div>
                   )}
                 </div>
               </div>
