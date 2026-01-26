@@ -1,3 +1,4 @@
+
 export enum OfferStatus {
   RUNNING = 'Rodando / Escala',
   VALIDATED = 'Validada',
@@ -10,13 +11,13 @@ export interface Offer {
   id: string;
   name: string;
   status: OfferStatus;
-  productPrice?: number; // Ticket value
-  productCost?: number;  // COGS / CMV
+  productPrice?: number;
+  productCost?: number;
 }
 
 export interface AdEntry {
   id: string;
-  date: string; // ISO string YYYY-MM-DD
+  date: string;
   offerId: string;
   spend: number;
   revenue: number;
@@ -42,7 +43,7 @@ export interface RecurringExpense {
   id: string;
   name: string;
   amount: number;
-  dayOfMonth: number; // 1-31
+  dayOfMonth: number;
   category: ExpenseCategory;
 }
 
@@ -53,6 +54,35 @@ export interface DashboardMetrics {
   netProfit: number;
   roas: number;
   roi: number;
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  role: string;
+  avatar_url?: string;
+}
+
+export interface Task {
+  id: string;
+  project_id: string;
+  text: string;
+  completed: boolean;
+  assignee_id?: string;
+  instructions?: string;
+  assignee_notes?: string;
+  completed_at?: string;
+  instruction_author?: string; 
+  notes_author?: string;       
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  status: 'Ativo' | 'Pausado' | 'Concluído';
+  progress: number;
+  created_at?: string;
 }
 
 export type ViewMode = 'overview' | 'traffic_only' | 'net_profit';
