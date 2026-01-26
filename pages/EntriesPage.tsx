@@ -43,7 +43,7 @@ export const EntriesPage: React.FC = () => {
     try {
       const [offersRes, adsRes, expRes] = await Promise.all([
         supabase.from('offers').select('*').order('name'),
-        supabase.from('ads').select('*').order('date', { ascending: false }).limit(20),
+        supabase.from('marketing_data').select('*').order('date', { ascending: false }).limit(20),
         supabase.from('expenses').select('*').order('date', { ascending: false }).limit(20)
       ]);
       
@@ -65,7 +65,7 @@ export const EntriesPage: React.FC = () => {
 
     if (supabase) {
       try {
-        const { error } = await supabase.from('ads').insert([{
+        const { error } = await supabase.from('marketing_data').insert([{
           date: adForm.date,
           offer_id: adForm.offerId,
           spend: parseFloat(adForm.spend),
@@ -116,25 +116,21 @@ export const EntriesPage: React.FC = () => {
     
     if (!confirm('Excluir este registro de anúncio?')) return;
     
-    // Atualização otimista: remove da tela primeiro
     const previousAds = [...ads];
     setAds(current => current.filter(ad => ad.id !== id));
 
     if (supabase) {
       try {
-        const { error } = await supabase.from('ads').delete().eq('id', id);
+        const { error } = await supabase.from('marketing_data').delete().eq('id', id);
         if (error) {
           console.error("Erro Supabase:", error);
-          alert("Erro no servidor ao excluir. O registro será restaurado na tela.");
+          alert("Erro no servidor ao excluir. Verifique se renomeou a tabela para 'marketing_data'.");
           setAds(previousAds);
         }
       } catch (err: any) {
         console.error("Erro de conexão:", err);
-        // Se for erro de fetch mas o ID sumiu do banco, não precisamos alertar agressivamente
-        if (err.name !== 'TypeError') {
-           alert("Erro de conexão ao tentar excluir.");
-           setAds(previousAds);
-        }
+        alert("Falha crítica na conexão. O registro foi restaurado.");
+        setAds(previousAds);
       }
     }
   };
@@ -153,7 +149,6 @@ export const EntriesPage: React.FC = () => {
         const { error } = await supabase.from('expenses').delete().eq('id', id);
         if (error) {
           console.error("Erro Supabase:", error);
-          alert("Erro no servidor ao excluir.");
           setExpenses(previousExpenses);
         }
       } catch (err) {
@@ -169,7 +164,7 @@ export const EntriesPage: React.FC = () => {
     <div className="animate-fade-in space-y-10 pb-20">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         
-        {/* FORMULÁRIO DE ANÚNCIOS (ADS) */}
+        {/* FORMULÁRIO DE ANÚNCIOS */}
         <div className="space-y-6">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><TrendingUp size={20}/></div>
@@ -199,14 +194,14 @@ export const EntriesPage: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gasto (Ads)</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gasto</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-500 font-bold text-sm">R$</span>
                   <input required type="number" step="0.01" value={adForm.spend} onChange={e => setAdForm({...adForm, spend: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 shadow-inner" placeholder="0,00"/>
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Receita (Vendas)</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Receita</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 font-bold text-sm">R$</span>
                   <input required type="number" step="0.01" value={adForm.revenue} onChange={e => setAdForm({...adForm, revenue: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 shadow-inner" placeholder="0,00"/>
@@ -219,10 +214,10 @@ export const EntriesPage: React.FC = () => {
             </button>
           </form>
 
-          {/* LISTA RECENTE ADS */}
+          {/* LISTA RECENTE */}
           <div className="bg-white rounded-[2rem] border border-gray-200 overflow-hidden shadow-sm">
             <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-               <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Últimos Lançamentos de Ads</h4>
+               <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Últimos Lançamentos</h4>
             </div>
             <div className="divide-y divide-gray-50">
               {ads.map(ad => (
