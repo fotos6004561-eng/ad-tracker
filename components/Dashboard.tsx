@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { 
   DollarSign, TrendingUp, Target, 
-  Activity, AlertOctagon, Sparkles,
+  Activity, Sparkles,
   Filter, Calendar, ChevronDown
 } from 'lucide-react';
 import { MetricsCard } from './MetricsCard';
@@ -33,14 +33,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  // --- Helper: Date Filtering Logic ---
   const getDateRangeBounds = (range: DateRangeType, offsetDays: number = 0) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
     const referenceDate = new Date(today);
     referenceDate.setDate(today.getDate() - offsetDays);
-
     let startDate = new Date(referenceDate);
     let endDate = new Date(referenceDate);
 
@@ -79,55 +76,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const calculateMetricsForRange = (
-      targetAds: AdEntry[], 
-      targetExpenses: ExtraExpense[], 
-      rangeType: DateRangeType,
-      offset: number = 0
-    ): DashboardMetrics => {
-      
-      let rangeDuration = 1;
-      if (rangeType === 'last3days') rangeDuration = 3;
-      if (rangeType === 'last7days') rangeDuration = 7;
-      if (rangeType === 'last30days') rangeDuration = 30;
-      if (rangeType === 'yesterday') rangeDuration = 1;
-      if (rangeType === 'thisMonth') rangeDuration = 30;
-      
-      const effectiveOffset = offset > 0 ? rangeDuration : 0; 
-      const { startDate, endDate } = getDateRangeBounds(rangeType, effectiveOffset);
+    targetAds: AdEntry[], 
+    targetExpenses: ExtraExpense[], 
+    rangeType: DateRangeType,
+    offset: number = 0
+  ): DashboardMetrics => {
+    let rangeDuration = 1;
+    if (rangeType === 'last3days') rangeDuration = 3;
+    if (rangeType === 'last7days') rangeDuration = 7;
+    if (rangeType === 'last30days') rangeDuration = 30;
+    if (rangeType === 'yesterday') rangeDuration = 1;
+    if (rangeType === 'thisMonth') rangeDuration = 30;
+    
+    const effectiveOffset = offset > 0 ? rangeDuration : 0; 
+    const { startDate, endDate } = getDateRangeBounds(rangeType, effectiveOffset);
 
-      const relevantAds = targetAds.filter(ad => {
-        if (selectedOfferId !== 'all' && ad.offerId !== selectedOfferId) return false;
-        return isDateInBounds(ad.date, startDate, endDate);
-      });
+    const relevantAds = targetAds.filter(ad => {
+      if (selectedOfferId !== 'all' && ad.offerId !== selectedOfferId) return false;
+      return isDateInBounds(ad.date, startDate, endDate);
+    });
 
-      const relevantExpenses = targetExpenses.filter(e => isDateInBounds(e.date, startDate, endDate));
+    const relevantExpenses = targetExpenses.filter(e => isDateInBounds(e.date, startDate, endDate));
 
-      let recurringTotal = 0;
-      if (selectedOfferId === 'all') {
-          const loopDate = new Date(startDate);
-          const endLoop = new Date(endDate);
-          while (loopDate <= endLoop) {
-             const currentDayOfMonth = loopDate.getDate();
-             recurringExpenses.forEach(re => {
-                if (re.dayOfMonth === currentDayOfMonth) recurringTotal += re.amount;
-             });
-             loopDate.setDate(loopDate.getDate() + 1);
-          }
+    let recurringTotal = 0;
+    if (selectedOfferId === 'all') {
+      const loopDate = new Date(startDate);
+      const endLoop = new Date(endDate);
+      while (loopDate <= endLoop) {
+        const currentDayOfMonth = loopDate.getDate();
+        recurringExpenses.forEach(re => {
+          if (re.dayOfMonth === currentDayOfMonth) recurringTotal += re.amount;
+        });
+        loopDate.setDate(loopDate.getDate() + 1);
       }
+    }
 
-      const totalRevenue = relevantAds.reduce((acc, curr) => acc + curr.revenue, 0);
-      const totalSpend = relevantAds.reduce((acc, curr) => acc + curr.spend, 0);
-      const manualExtras = selectedOfferId === 'all' 
-        ? relevantExpenses.reduce((acc, curr) => acc + curr.amount, 0)
-        : 0;
-      
-      const totalExtras = manualExtras + recurringTotal;
-      const netProfit = totalRevenue - totalSpend - totalExtras;
-      const roas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
-      const totalInvestment = totalSpend + totalExtras;
-      const roi = totalInvestment > 0 ? ((totalRevenue - totalInvestment) / totalInvestment) * 100 : 0;
+    const totalRevenue = relevantAds.reduce((acc, curr) => acc + curr.revenue, 0);
+    const totalSpend = relevantAds.reduce((acc, curr) => acc + curr.spend, 0);
+    const manualExtras = selectedOfferId === 'all' ? relevantExpenses.reduce((acc, curr) => acc + curr.amount, 0) : 0;
+    const totalExtras = manualExtras + recurringTotal;
+    const netProfit = totalRevenue - totalSpend - totalExtras;
+    const roas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
+    const totalInvestment = totalSpend + totalExtras;
+    const roi = totalInvestment > 0 ? ((totalRevenue - totalInvestment) / totalInvestment) * 100 : 0;
 
-      return { totalRevenue, totalSpend, totalExtras, netProfit, roas, roi };
+    return { totalRevenue, totalSpend, totalExtras, netProfit, roas, roi };
   };
 
   const metrics = useMemo(() => calculateMetricsForRange(ads, expenses, dateRange, 0), [ads, expenses, recurringExpenses, selectedOfferId, dateRange]);
@@ -136,44 +129,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const chartData = useMemo(() => {
     const { startDate, endDate } = getDateRangeBounds(dateRange);
     const dataMap = new Map<string, any>();
-    
     const loopDate = new Date(startDate);
     while(loopDate <= endDate) {
-        const dateStr = loopDate.toISOString().split('T')[0];
-        dataMap.set(dateStr, { date: dateStr, revenue: 0, spend: 0, extras: 0, profit: 0 });
-        loopDate.setDate(loopDate.getDate() + 1);
+      const dateStr = loopDate.toISOString().split('T')[0];
+      dataMap.set(dateStr, { date: dateStr, revenue: 0, spend: 0, extras: 0, profit: 0 });
+      loopDate.setDate(loopDate.getDate() + 1);
     }
 
     ads.forEach(ad => {
       if (selectedOfferId !== 'all' && ad.offerId !== selectedOfferId) return;
       if (dataMap.has(ad.date)) {
-          const day = dataMap.get(ad.date);
-          day.revenue += ad.revenue;
-          day.spend += ad.spend;
+        const day = dataMap.get(ad.date);
+        day.revenue += ad.revenue;
+        day.spend += ad.spend;
       }
     });
 
     if (selectedOfferId === 'all') {
-        expenses.forEach(exp => {
-            if (dataMap.has(exp.date)) dataMap.get(exp.date).extras += exp.amount;
+      expenses.forEach(exp => {
+        if (dataMap.has(exp.date)) dataMap.get(exp.date).extras += exp.amount;
+      });
+      dataMap.forEach((val, key) => {
+        const dateObj = new Date(key + 'T12:00:00');
+        const dayOfMonth = dateObj.getDate();
+        recurringExpenses.forEach(re => {
+          if (re.dayOfMonth === dayOfMonth) val.extras += re.amount;
         });
-
-        dataMap.forEach((val, key) => {
-            const dateObj = new Date(key + 'T12:00:00');
-            const dayOfMonth = dateObj.getDate();
-            recurringExpenses.forEach(re => {
-                if (re.dayOfMonth === dayOfMonth) val.extras += re.amount;
-            });
-        });
+      });
     }
 
     return Array.from(dataMap.values()).map(day => {
-        const [year, month, dayStr] = day.date.split('-');
-        return {
-            ...day,
-            profit: day.revenue - day.spend - day.extras,
-            dateFormatted: `${dayStr}/${month}`
-        };
+      const [year, month, dayStr] = day.date.split('-');
+      return {
+        ...day,
+        profit: day.revenue - day.spend - day.extras,
+        dateFormatted: `${dayStr}/${month}`
+      };
     }).sort((a, b) => a.date.localeCompare(b.date));
   }, [ads, expenses, recurringExpenses, selectedOfferId, dateRange]);
 
@@ -186,25 +177,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const formatCurrency = (val: number) => `R$ ${val.toFixed(2)}`;
   const getGrowth = (current: number, previous: number) => {
-      if (previous === 0) return current > 0 ? '+100%' : '0%';
-      const diff = ((current - previous) / previous) * 100;
-      return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
+    if (previous === 0) return current > 0 ? '+100%' : '0%';
+    const diff = ((current - previous) / previous) * 100;
+    return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
   };
 
   const getGrowthColor = (current: number, previous: number, inverse = false) => {
-      if (current === previous) return 'text-gray-500';
-      const isPositive = current > previous;
-      if (inverse) return isPositive ? 'text-rose-600' : 'text-emerald-600';
-      return isPositive ? 'text-emerald-600' : 'text-rose-600';
+    if (current === previous) return 'text-gray-500';
+    const isPositive = current > previous;
+    if (inverse) return isPositive ? 'text-rose-600' : 'text-emerald-600';
+    return isPositive ? 'text-emerald-600' : 'text-rose-600' as any;
   };
 
   return (
     <div className="space-y-8 animate-fade-in pb-20">
-      
-      {/* BARRA DE FILTROS SUPERIOR */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center bg-white p-4 rounded-[2rem] border border-gray-200 shadow-sm">
-        
-        {/* Seletor de Oferta */}
         <div className="lg:col-span-4 flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
            <div className="p-2 bg-white rounded-lg text-indigo-600 shadow-sm"><Filter size={16}/></div>
            <div className="flex-1">
@@ -221,7 +208,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
            <ChevronDown size={14} className="text-gray-400"/>
         </div>
 
-        {/* Seletor de Período */}
         <div className="lg:col-span-5 flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
            <div className="p-2 bg-white rounded-lg text-emerald-600 shadow-sm"><Calendar size={16}/></div>
            <div className="flex-1">
@@ -243,7 +229,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
            <ChevronDown size={14} className="text-gray-400"/>
         </div>
 
-        {/* Botão AI */}
         <div className="lg:col-span-3">
           <button
             onClick={handleGeminiAnalysis}
@@ -256,12 +241,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Tabs de Modo de Visualização */}
       <div className="flex gap-2 p-1.5 bg-gray-100 rounded-2xl w-fit">
         {[
-          { id: 'overview', label: 'Visão Geral', color: 'indigo' },
-          { id: 'traffic_only', label: 'Tráfego & ROAS', color: 'blue' },
-          { id: 'net_profit', label: 'Lucro Real', color: 'emerald' }
+          { id: 'overview', label: 'Visão Geral' },
+          { id: 'traffic_only', label: 'Tráfego & ROAS' },
+          { id: 'net_profit', label: 'Lucro Real' }
         ].map(tab => (
           <button 
             key={tab.id}
