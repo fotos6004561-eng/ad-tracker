@@ -40,15 +40,19 @@ export const EntriesPage: React.FC = () => {
   const fetchData = async () => {
     if (!supabase) return;
     setLoading(true);
-    const [offersRes, adsRes, expRes] = await Promise.all([
-      supabase.from('offers').select('*').order('name'),
-      supabase.from('ads').select('*').order('date', { ascending: false }).limit(10),
-      supabase.from('expenses').select('*').order('date', { ascending: false }).limit(10)
-    ]);
-    
-    if (offersRes.data) setOffers(offersRes.data);
-    if (adsRes.data) setAds(adsRes.data.map(a => ({ ...a, offerId: a.offer_id })));
-    if (expRes.data) setExpenses(expRes.data);
+    try {
+      const [offersRes, adsRes, expRes] = await Promise.all([
+        supabase.from('offers').select('*').order('name'),
+        supabase.from('ads').select('*').order('date', { ascending: false }).limit(15),
+        supabase.from('expenses').select('*').order('date', { ascending: false }).limit(15)
+      ]);
+      
+      if (offersRes.data) setOffers(offersRes.data);
+      if (adsRes.data) setAds(adsRes.data.map(a => ({ ...a, offerId: a.offer_id })));
+      if (expRes.data) setExpenses(expRes.data);
+    } catch (err) {
+      console.error("Erro ao carregar dados:", err);
+    }
     setLoading(false);
   };
 
@@ -69,6 +73,8 @@ export const EntriesPage: React.FC = () => {
       if (!error) {
         setAdForm({ ...adForm, spend: '', revenue: '' });
         fetchData();
+      } else {
+        alert("Erro ao salvar: " + error.message);
       }
     }
     setSubmitting(false);
@@ -89,22 +95,42 @@ export const EntriesPage: React.FC = () => {
       if (!error) {
         setExpenseForm({ ...expenseForm, amount: '', description: '' });
         fetchData();
+      } else {
+        alert("Erro ao salvar despesa: " + error.message);
       }
     }
     setSubmitting(false);
   };
 
   const deleteAd = async (id: string) => {
-    if (confirm('Excluir este registro de anúncio?') && supabase) {
-      await supabase.from('ads').delete().eq('id', id);
-      fetchData();
+    if (!confirm('Excluir este registro de anúncio?')) return;
+    
+    // Atualização otimista: remove da tela primeiro
+    const previousAds = [...ads];
+    setAds(ads.filter(ad => ad.id !== id));
+
+    if (supabase) {
+      const { error } = await supabase.from('ads').delete().eq('id', id);
+      if (error) {
+        alert("Não foi possível excluir do banco de dados: " + error.message);
+        setAds(previousAds); // Reverte se der erro
+      }
     }
   };
 
   const deleteExpense = async (id: string) => {
-    if (confirm('Excluir esta despesa?') && supabase) {
-      await supabase.from('expenses').delete().eq('id', id);
-      fetchData();
+    if (!confirm('Excluir esta despesa?')) return;
+
+    // Atualização otimista
+    const previousExpenses = [...expenses];
+    setExpenses(expenses.filter(exp => exp.id !== id));
+
+    if (supabase) {
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      if (error) {
+        alert("Não foi possível excluir do banco de dados: " + error.message);
+        setExpenses(previousExpenses); // Reverte se der erro
+      }
     }
   };
 
@@ -171,7 +197,7 @@ export const EntriesPage: React.FC = () => {
             </div>
             <div className="divide-y divide-gray-50">
               {ads.map(ad => (
-                <div key={ad.id} className="p-5 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <div key={ad.id} className="p-5 flex items-center justify-between hover:bg-gray-50 transition-colors group">
                   <div className="flex items-center gap-4">
                     <div className="text-center bg-gray-100 p-2 rounded-lg min-w-[50px]">
                        <span className="block text-[10px] font-black text-gray-400 uppercase">{ad.date.split('-')[2]}/{ad.date.split('-')[1]}</span>
@@ -184,9 +210,10 @@ export const EntriesPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => deleteAd(ad.id)} className="p-2 text-gray-300 hover:text-rose-500 transition-all"><Trash2 size={16}/></button>
+                  <button onClick={() => deleteAd(ad.id)} className="p-3 text-gray-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
                 </div>
               ))}
+              {ads.length === 0 && <div className="p-10 text-center text-gray-300 font-bold uppercase text-[10px]">Nenhum registro recente</div>}
             </div>
           </div>
         </div>
@@ -237,7 +264,7 @@ export const EntriesPage: React.FC = () => {
             </div>
             <div className="divide-y divide-gray-50">
               {expenses.map(exp => (
-                <div key={exp.id} className="p-5 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <div key={exp.id} className="p-5 flex items-center justify-between hover:bg-gray-50 transition-colors group">
                   <div className="flex items-center gap-4">
                     <div className="p-2 bg-rose-50 text-rose-500 rounded-lg"><DollarSign size={16}/></div>
                     <div>
@@ -248,9 +275,10 @@ export const EntriesPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => deleteExpense(exp.id)} className="p-2 text-gray-300 hover:text-rose-500 transition-all"><Trash2 size={16}/></button>
+                  <button onClick={() => deleteExpense(exp.id)} className="p-3 text-gray-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
                 </div>
               ))}
+              {expenses.length === 0 && <div className="p-10 text-center text-gray-300 font-bold uppercase text-[10px]">Nenhuma despesa recente</div>}
             </div>
           </div>
         </div>
