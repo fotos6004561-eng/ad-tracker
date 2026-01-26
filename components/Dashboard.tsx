@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -5,7 +6,8 @@ import {
 } from 'recharts';
 import { 
   DollarSign, TrendingUp, Target, 
-  Activity, AlertOctagon, Sparkles 
+  Activity, AlertOctagon, Sparkles,
+  Filter, Calendar, ChevronDown
 } from 'lucide-react';
 import { MetricsCard } from './MetricsCard';
 import { AdEntry, ExtraExpense, Offer, DashboardMetrics, ViewMode, DateRangeType, RecurringExpense } from '../types';
@@ -17,10 +19,16 @@ interface DashboardProps {
   recurringExpenses: RecurringExpense[];
   offers: Offer[];
   selectedOfferId: string | 'all';
+  setSelectedOfferId: (id: string | 'all') => void;
   dateRange: DateRangeType;
+  setDateRange: (range: DateRangeType) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringExpenses, offers, selectedOfferId, dateRange }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ 
+  ads, expenses, recurringExpenses, offers, 
+  selectedOfferId, setSelectedOfferId, 
+  dateRange, setDateRange 
+}) => {
   const [viewMode, setViewMode] = useState<ViewMode>('overview');
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -30,7 +38,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Shift the reference date if we are calculating previous period
     const referenceDate = new Date(today);
     referenceDate.setDate(today.getDate() - offsetDays);
 
@@ -38,8 +45,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
     let endDate = new Date(referenceDate);
 
     switch (range) {
-      case 'today':
-        break; // start = end = today
+      case 'today': break;
       case 'yesterday':
         startDate.setDate(referenceDate.getDate() - 1);
         endDate.setDate(referenceDate.getDate() - 1);
@@ -66,7 +72,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
 
   const isDateInBounds = (dateStr: string, start: Date, end: Date) => {
     const d = new Date(dateStr);
-    // Fix timezone issues by using string comparison for dates or careful constructing
     const dZero = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const startZero = new Date(start.getFullYear(), start.getMonth(), start.getDate());
     const endZero = new Date(end.getFullYear(), end.getMonth(), end.getDate());
@@ -85,33 +90,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
       if (rangeType === 'last7days') rangeDuration = 7;
       if (rangeType === 'last30days') rangeDuration = 30;
       if (rangeType === 'yesterday') rangeDuration = 1;
+      if (rangeType === 'thisMonth') rangeDuration = 30;
       
-      // If we are looking for "Previous period", the offset is the duration
       const effectiveOffset = offset > 0 ? rangeDuration : 0; 
-      
       const { startDate, endDate } = getDateRangeBounds(rangeType, effectiveOffset);
 
-      // Filter Ads
       const relevantAds = targetAds.filter(ad => {
         if (selectedOfferId !== 'all' && ad.offerId !== selectedOfferId) return false;
         return isDateInBounds(ad.date, startDate, endDate);
       });
 
-      // Filter Manual Expenses
       const relevantExpenses = targetExpenses.filter(e => isDateInBounds(e.date, startDate, endDate));
 
-      // Calculate Recurring Expenses within this range
       let recurringTotal = 0;
-      if (selectedOfferId === 'all') { // Only apply recurring expenses to global view
+      if (selectedOfferId === 'all') {
           const loopDate = new Date(startDate);
           const endLoop = new Date(endDate);
-          
           while (loopDate <= endLoop) {
              const currentDayOfMonth = loopDate.getDate();
              recurringExpenses.forEach(re => {
-                if (re.dayOfMonth === currentDayOfMonth) {
-                    recurringTotal += re.amount;
-                }
+                if (re.dayOfMonth === currentDayOfMonth) recurringTotal += re.amount;
              });
              loopDate.setDate(loopDate.getDate() + 1);
           }
@@ -135,12 +133,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
   const metrics = useMemo(() => calculateMetricsForRange(ads, expenses, dateRange, 0), [ads, expenses, recurringExpenses, selectedOfferId, dateRange]);
   const prevMetrics = useMemo(() => calculateMetricsForRange(ads, expenses, dateRange, 1), [ads, expenses, recurringExpenses, selectedOfferId, dateRange]);
 
-  // Chart Data Preparation
   const chartData = useMemo(() => {
     const { startDate, endDate } = getDateRangeBounds(dateRange);
     const dataMap = new Map<string, any>();
     
-    // Fill all days in range for continuous chart
     const loopDate = new Date(startDate);
     while(loopDate <= endDate) {
         const dateStr = loopDate.toISOString().split('T')[0];
@@ -148,7 +144,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
         loopDate.setDate(loopDate.getDate() + 1);
     }
 
-    // Populate Ads
     ads.forEach(ad => {
       if (selectedOfferId !== 'all' && ad.offerId !== selectedOfferId) return;
       if (dataMap.has(ad.date)) {
@@ -158,51 +153,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
       }
     });
 
-    // Populate Expenses (Manual + Recurring)
     if (selectedOfferId === 'all') {
         expenses.forEach(exp => {
-            if (dataMap.has(exp.date)) {
-                dataMap.get(exp.date).extras += exp.amount;
-            }
+            if (dataMap.has(exp.date)) dataMap.get(exp.date).extras += exp.amount;
         });
 
-        // Add Recurring
         dataMap.forEach((val, key) => {
-            const dateObj = new Date(key + 'T12:00:00'); // Safe date parsing
+            const dateObj = new Date(key + 'T12:00:00');
             const dayOfMonth = dateObj.getDate();
             recurringExpenses.forEach(re => {
-                if (re.dayOfMonth === dayOfMonth) {
-                    val.extras += re.amount;
-                }
+                if (re.dayOfMonth === dayOfMonth) val.extras += re.amount;
             });
         });
     }
 
-    const result = Array.from(dataMap.values()).map(day => {
+    return Array.from(dataMap.values()).map(day => {
         const [year, month, dayStr] = day.date.split('-');
-        const dateFormatted = `${dayStr}/${month}`;
-
         return {
             ...day,
             profit: day.revenue - day.spend - day.extras,
-            dateFormatted: dateFormatted 
+            dateFormatted: `${dayStr}/${month}`
         };
     }).sort((a, b) => a.date.localeCompare(b.date));
-
-    return result;
   }, [ads, expenses, recurringExpenses, selectedOfferId, dateRange]);
 
   const handleGeminiAnalysis = async () => {
     setIsAnalyzing(true);
-    setAiAnalysis(null);
-    const result = await analyzePerformance(metrics, ads.slice(-10), expenses.slice(-10)); // Pass slightly more context
+    const result = await analyzePerformance(metrics, ads.slice(-10), expenses.slice(-10));
     setAiAnalysis(result);
     setIsAnalyzing(false);
   };
 
   const formatCurrency = (val: number) => `R$ ${val.toFixed(2)}`;
-
-  // Growth Helper
   const getGrowth = (current: number, previous: number) => {
       if (previous === 0) return current > 0 ? '+100%' : '0%';
       const diff = ((current - previous) / previous) * 100;
@@ -217,55 +199,93 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* View Toggles */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-2 rounded-xl border border-gray-200 shadow-sm">
-        <div className="flex gap-2">
-           <button 
-            onClick={() => setViewMode('overview')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'overview' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
+    <div className="space-y-8 animate-fade-in pb-20">
+      
+      {/* BARRA DE FILTROS SUPERIOR */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center bg-white p-4 rounded-[2rem] border border-gray-200 shadow-sm">
+        
+        {/* Seletor de Oferta */}
+        <div className="lg:col-span-4 flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
+           <div className="p-2 bg-white rounded-lg text-indigo-600 shadow-sm"><Filter size={16}/></div>
+           <div className="flex-1">
+              <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest">Produto / Oferta</label>
+              <select 
+                value={selectedOfferId} 
+                onChange={(e) => setSelectedOfferId(e.target.value)}
+                className="w-full bg-transparent border-none text-sm font-black text-gray-900 focus:ring-0 cursor-pointer appearance-none uppercase"
+              >
+                <option value="all">TODAS AS OFERTAS</option>
+                {offers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+           </div>
+           <ChevronDown size={14} className="text-gray-400"/>
+        </div>
+
+        {/* Seletor de Período */}
+        <div className="lg:col-span-5 flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
+           <div className="p-2 bg-white rounded-lg text-emerald-600 shadow-sm"><Calendar size={16}/></div>
+           <div className="flex-1">
+              <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest">Janela de Análise</label>
+              <select 
+                value={dateRange} 
+                onChange={(e) => setDateRange(e.target.value as DateRangeType)}
+                className="w-full bg-transparent border-none text-sm font-black text-gray-900 focus:ring-0 cursor-pointer appearance-none uppercase"
+              >
+                <option value="today">HOJE</option>
+                <option value="yesterday">ONTEM</option>
+                <option value="last3days">ÚLTIMOS 3 DIAS</option>
+                <option value="last7days">ÚLTIMOS 7 DIAS</option>
+                <option value="last30days">ÚLTIMOS 30 DIAS</option>
+                <option value="thisMonth">ESTE MÊS</option>
+                <option value="allTime">TODO O PERÍODO</option>
+              </select>
+           </div>
+           <ChevronDown size={14} className="text-gray-400"/>
+        </div>
+
+        {/* Botão AI */}
+        <div className="lg:col-span-3">
+          <button
+            onClick={handleGeminiAnalysis}
+            disabled={isAnalyzing}
+            className="w-full flex items-center justify-center gap-2 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black transition-all disabled:opacity-50 shadow-xl shadow-gray-200"
           >
-            Visão Geral
-          </button>
-          <button 
-            onClick={() => setViewMode('traffic_only')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'traffic_only' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-          >
-            Tráfego & ROAS
-          </button>
-          <button 
-            onClick={() => setViewMode('net_profit')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'net_profit' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-          >
-            Lucro Real
+            <Sparkles size={16} className="text-indigo-400" />
+            {isAnalyzing ? 'Processando...' : 'Insights Sênior AI'}
           </button>
         </div>
-        
-        <button
-          onClick={handleGeminiAnalysis}
-          disabled={isAnalyzing}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shadow-md shadow-purple-200"
-        >
-          <Sparkles size={16} />
-          {isAnalyzing ? 'Analisando...' : 'Gerar Insights AI'}
-        </button>
       </div>
 
-      {/* AI Analysis Result */}
+      {/* Tabs de Modo de Visualização */}
+      <div className="flex gap-2 p-1.5 bg-gray-100 rounded-2xl w-fit">
+        {[
+          { id: 'overview', label: 'Visão Geral', color: 'indigo' },
+          { id: 'traffic_only', label: 'Tráfego & ROAS', color: 'blue' },
+          { id: 'net_profit', label: 'Lucro Real', color: 'emerald' }
+        ].map(tab => (
+          <button 
+            key={tab.id}
+            onClick={() => setViewMode(tab.id as ViewMode)}
+            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === tab.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {aiAnalysis && (
-        <div className="bg-white border border-purple-200 rounded-xl p-6 shadow-lg shadow-purple-100">
-          <div className="flex items-center gap-2 mb-4">
-            <Sparkles className="text-purple-600" size={24} />
-            <h3 className="text-lg font-semibold text-gray-900">Insights do Gemini</h3>
+        <div className="bg-white border-2 border-indigo-100 rounded-[2.5rem] p-10 shadow-2xl animate-scale-in">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-200"><Sparkles size={24} /></div>
+            <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Relatório de IA - Gemini Sênior</h3>
           </div>
-          <div className="prose prose-sm max-w-none text-gray-600">
+          <div className="prose prose-indigo max-w-none text-gray-700 font-medium leading-relaxed">
              <div dangerouslySetInnerHTML={{ __html: aiAnalysis.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
           </div>
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricsCard 
           title="Faturamento" 
           value={formatCurrency(metrics.totalRevenue)} 
@@ -280,7 +300,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
           icon={Activity}
           color="bg-blue-50 text-blue-600"
           trend={`${getGrowth(metrics.totalSpend, prevMetrics.totalSpend)} vs anterior`}
-          trendColor={getGrowthColor(metrics.totalSpend, prevMetrics.totalSpend, true)} // Inverse: spending more is usually "red" unless scale context, but kept simple
+          trendColor={getGrowthColor(metrics.totalSpend, prevMetrics.totalSpend, true)}
         />
         <MetricsCard 
           title="Lucro Líquido" 
@@ -299,102 +319,52 @@ export const Dashboard: React.FC<DashboardProps> = ({ ads, expenses, recurringEx
         />
       </div>
 
-       {selectedOfferId === 'all' && viewMode === 'net_profit' && (
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white p-4 rounded-xl border border-gray-200 flex items-center justify-between shadow-sm">
-              <div>
-                 <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider">Gastos Extras (Total)</p>
-                 <p className="text-xl font-bold text-gray-900">{formatCurrency(metrics.totalExtras)}</p>
-              </div>
-              <AlertOctagon className="text-rose-500 opacity-80" />
-            </div>
-         </div>
-       )}
-
-      {/* Charts Section */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm min-h-[400px]">
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">
-          {viewMode === 'overview' && 'Performance Geral (Receita x Gasto)'}
-          {viewMode === 'traffic_only' && 'Eficiência de Tráfego (ROAS)'}
-          {viewMode === 'net_profit' && 'Lucratividade Real (Pós Despesas)'}
+      <div className="bg-white border border-gray-200 rounded-[2.5rem] p-10 shadow-sm min-h-[500px]">
+        <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-10">
+          {viewMode === 'overview' && 'Gráfico de Tração (Receita x Gasto)'}
+          {viewMode === 'traffic_only' && 'Eficiência Comercial (ROAS)'}
+          {viewMode === 'net_profit' && 'Fluxo de Lucratividade'}
         </h3>
         
-        {chartData.length === 0 ? (
-           <div className="h-[350px] flex flex-col items-center justify-center text-gray-400">
-             <Activity size={48} className="mb-2 opacity-20" />
-             <p>Sem dados para este período.</p>
-           </div>
-        ) : (
-          <div className="h-[350px] w-full">
+        <div className="h-[400px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'overview' ? (
-                 <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                 <AreaChart data={chartData}>
                     <defs>
-                      <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
+                      <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
+                      <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis 
-                      dataKey="dateFormatted" 
-                      stroke="#94a3b8" 
-                      tick={{fontSize: 12}} 
-                      axisLine={false}
-                      tickLine={false}
-                      dy={10}
-                    />
-                    <YAxis 
-                      stroke="#94a3b8" 
-                      tick={{fontSize: 12}} 
-                      tickFormatter={(val) => `R$${val}`} 
-                      axisLine={false}
-                      tickLine={false}
-                      dx={-10}
-                    />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', color: '#1e293b', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      formatter={(val: number) => formatCurrency(val)}
-                    />
-                    <Legend wrapperStyle={{paddingTop: '20px'}}/>
-                    <Area type="monotone" dataKey="revenue" name="Faturamento" stroke="#10b981" fillOpacity={1} fill="url(#colorRev)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="spend" name="Ads Spend" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSpend)" strokeWidth={2} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="dateFormatted" stroke="#94a3b8" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} dy={10} />
+                    <YAxis stroke="#94a3b8" tick={{fontSize: 10, fontWeight: 'bold'}} tickFormatter={(val) => `R$${val}`} axisLine={false} tickLine={false} dx={-10} />
+                    <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold' }} formatter={(val: number) => formatCurrency(val)} />
+                    <Legend iconType="circle" wrapperStyle={{paddingTop: '30px', fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase'}}/>
+                    <Area type="monotone" dataKey="revenue" name="Faturamento" stroke="#10b981" fill="url(#colorRev)" strokeWidth={4} />
+                    <Area type="monotone" dataKey="spend" name="Ads Spend" stroke="#3b82f6" fill="url(#colorSpend)" strokeWidth={4} />
                  </AreaChart>
               ) : viewMode === 'traffic_only' ? (
-                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis dataKey="dateFormatted" stroke="#94a3b8" axisLine={false} tickLine={false} dy={10} />
-                    <YAxis stroke="#94a3b8" axisLine={false} tickLine={false} />
-                    <Tooltip 
-                      cursor={{fill: '#f1f5f9', opacity: 0.5}}
-                      contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', color: '#1e293b', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      formatter={(val: number) => formatCurrency(val)}
-                    />
-                    <Legend wrapperStyle={{paddingTop: '20px'}} />
-                    <Bar dataKey="spend" name="Investido" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} />
-                    <Bar dataKey="revenue" name="Retorno" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                 <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="dateFormatted" stroke="#94a3b8" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} dy={10} />
+                    <YAxis stroke="#94a3b8" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold' }} formatter={(val: number) => formatCurrency(val)} />
+                    <Legend wrapperStyle={{paddingTop: '30px', fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase'}} />
+                    <Bar dataKey="spend" name="Investido" fill="#3b82f6" radius={[8, 8, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="revenue" name="Retorno" fill="#10b981" radius={[8, 8, 0, 0]} maxBarSize={40} />
                  </BarChart>
               ) : (
-                <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                   <XAxis dataKey="dateFormatted" stroke="#94a3b8" axisLine={false} tickLine={false} dy={10} />
-                   <YAxis stroke="#94a3b8" axisLine={false} tickLine={false} />
-                   <Tooltip 
-                      contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', color: '#1e293b', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      formatter={(val: number) => formatCurrency(val)}
-                   />
-                   <Legend wrapperStyle={{paddingTop: '20px'}} />
-                   <Line type="monotone" dataKey="profit" name="Lucro Líquido" stroke="#8b5cf6" strokeWidth={3} dot={{r: 4, strokeWidth: 2, fill: '#fff'}} />
-                   <Line type="monotone" dataKey="extras" name="Gastos Extras" stroke="#f43f5e" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <LineChart data={chartData}>
+                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                   <XAxis dataKey="dateFormatted" stroke="#94a3b8" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} dy={10} />
+                   <YAxis stroke="#94a3b8" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                   <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold' }} formatter={(val: number) => formatCurrency(val)} />
+                   <Legend wrapperStyle={{paddingTop: '30px', fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase'}} />
+                   <Line type="monotone" dataKey="profit" name="Lucro Líquido" stroke="#6366f1" strokeWidth={5} dot={{r: 6, strokeWidth: 3, fill: '#fff'}} />
+                   <Line type="monotone" dataKey="extras" name="Despesas" stroke="#f43f5e" strokeWidth={2} strokeDasharray="6 6" dot={false} />
                 </LineChart>
               )}
             </ResponsiveContainer>
           </div>
-        )}
       </div>
     </div>
   );
