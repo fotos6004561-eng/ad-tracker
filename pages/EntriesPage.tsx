@@ -43,8 +43,8 @@ export const EntriesPage: React.FC = () => {
     try {
       const [offersRes, adsRes, expRes] = await Promise.all([
         supabase.from('offers').select('*').order('name'),
-        supabase.from('ads').select('*').order('date', { ascending: false }).limit(15),
-        supabase.from('expenses').select('*').order('date', { ascending: false }).limit(15)
+        supabase.from('ads').select('*').order('date', { ascending: false }).limit(20),
+        supabase.from('expenses').select('*').order('date', { ascending: false }).limit(20)
       ]);
       
       if (offersRes.data) setOffers(offersRes.data);
@@ -64,17 +64,21 @@ export const EntriesPage: React.FC = () => {
     setSubmitting(true);
 
     if (supabase) {
-      const { error } = await supabase.from('ads').insert([{
-        date: adForm.date,
-        offer_id: adForm.offerId,
-        spend: parseFloat(adForm.spend),
-        revenue: parseFloat(adForm.revenue)
-      }]);
-      if (!error) {
-        setAdForm({ ...adForm, spend: '', revenue: '' });
-        fetchData();
-      } else {
-        alert("Erro ao salvar: " + error.message);
+      try {
+        const { error } = await supabase.from('ads').insert([{
+          date: adForm.date,
+          offer_id: adForm.offerId,
+          spend: parseFloat(adForm.spend),
+          revenue: parseFloat(adForm.revenue)
+        }]);
+        if (!error) {
+          setAdForm({ ...adForm, spend: '', revenue: '' });
+          await fetchData();
+        } else {
+          alert("Erro ao salvar: " + error.message);
+        }
+      } catch (err) {
+        console.error(err);
       }
     }
     setSubmitting(false);
@@ -86,50 +90,75 @@ export const EntriesPage: React.FC = () => {
     setSubmitting(true);
 
     if (supabase) {
-      const { error } = await supabase.from('expenses').insert([{
-        date: expenseForm.date,
-        category: expenseForm.category,
-        amount: parseFloat(expenseForm.amount),
-        description: expenseForm.description
-      }]);
-      if (!error) {
-        setExpenseForm({ ...expenseForm, amount: '', description: '' });
-        fetchData();
-      } else {
-        alert("Erro ao salvar despesa: " + error.message);
+      try {
+        const { error } = await supabase.from('expenses').insert([{
+          date: expenseForm.date,
+          category: expenseForm.category,
+          amount: parseFloat(expenseForm.amount),
+          description: expenseForm.description
+        }]);
+        if (!error) {
+          setExpenseForm({ ...expenseForm, amount: '', description: '' });
+          await fetchData();
+        } else {
+          alert("Erro ao salvar despesa: " + error.message);
+        }
+      } catch (err) {
+        console.error(err);
       }
     }
     setSubmitting(false);
   };
 
-  const deleteAd = async (id: string) => {
+  const deleteAd = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
     if (!confirm('Excluir este registro de anúncio?')) return;
     
     // Atualização otimista: remove da tela primeiro
     const previousAds = [...ads];
-    setAds(ads.filter(ad => ad.id !== id));
+    setAds(current => current.filter(ad => ad.id !== id));
 
     if (supabase) {
-      const { error } = await supabase.from('ads').delete().eq('id', id);
-      if (error) {
-        alert("Não foi possível excluir do banco de dados: " + error.message);
-        setAds(previousAds); // Reverte se der erro
+      try {
+        const { error } = await supabase.from('ads').delete().eq('id', id);
+        if (error) {
+          console.error("Erro Supabase:", error);
+          alert("Erro no servidor ao excluir. O registro será restaurado na tela.");
+          setAds(previousAds);
+        }
+      } catch (err: any) {
+        console.error("Erro de conexão:", err);
+        // Se for erro de fetch mas o ID sumiu do banco, não precisamos alertar agressivamente
+        if (err.name !== 'TypeError') {
+           alert("Erro de conexão ao tentar excluir.");
+           setAds(previousAds);
+        }
       }
     }
   };
 
-  const deleteExpense = async (id: string) => {
+  const deleteExpense = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!confirm('Excluir esta despesa?')) return;
 
-    // Atualização otimista
     const previousExpenses = [...expenses];
-    setExpenses(expenses.filter(exp => exp.id !== id));
+    setExpenses(current => current.filter(exp => exp.id !== id));
 
     if (supabase) {
-      const { error } = await supabase.from('expenses').delete().eq('id', id);
-      if (error) {
-        alert("Não foi possível excluir do banco de dados: " + error.message);
-        setExpenses(previousExpenses); // Reverte se der erro
+      try {
+        const { error } = await supabase.from('expenses').delete().eq('id', id);
+        if (error) {
+          console.error("Erro Supabase:", error);
+          alert("Erro no servidor ao excluir.");
+          setExpenses(previousExpenses);
+        }
+      } catch (err) {
+        console.error(err);
+        setExpenses(previousExpenses);
       }
     }
   };
@@ -210,7 +239,7 @@ export const EntriesPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => deleteAd(ad.id)} className="p-3 text-gray-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
+                  <button type="button" onClick={(e) => deleteAd(e, ad.id)} className="p-3 text-gray-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
                 </div>
               ))}
               {ads.length === 0 && <div className="p-10 text-center text-gray-300 font-bold uppercase text-[10px]">Nenhum registro recente</div>}
@@ -275,7 +304,7 @@ export const EntriesPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => deleteExpense(exp.id)} className="p-3 text-gray-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
+                  <button type="button" onClick={(e) => deleteExpense(e, exp.id)} className="p-3 text-gray-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
                 </div>
               ))}
               {expenses.length === 0 && <div className="p-10 text-center text-gray-300 font-bold uppercase text-[10px]">Nenhuma despesa recente</div>}
