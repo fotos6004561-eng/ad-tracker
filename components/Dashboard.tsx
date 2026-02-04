@@ -2,12 +2,12 @@
 import React, { useMemo, useState } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  LineChart, Line, AreaChart, Area 
+  LineChart, Line, AreaChart, Area, Cell 
 } from 'recharts';
 import { 
   DollarSign, TrendingUp, Target, 
   Activity, Sparkles,
-  Filter, Calendar, ChevronDown
+  Filter, Calendar, ChevronDown, ArrowRight
 } from 'lucide-react';
 import { MetricsCard } from './MetricsCard';
 import { AdEntry, ExtraExpense, Offer, DashboardMetrics, ViewMode, DateRangeType, RecurringExpense } from '../types';
@@ -22,16 +22,23 @@ interface DashboardProps {
   setSelectedOfferId: (id: string | 'all') => void;
   dateRange: DateRangeType;
   setDateRange: (range: DateRangeType) => void;
+  customDates?: { start: string; end: string };
+  setCustomDates?: (dates: { start: string; end: string }) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
   ads, expenses, recurringExpenses, offers, 
   selectedOfferId, setSelectedOfferId, 
-  dateRange, setDateRange 
+  dateRange, setDateRange,
+  customDates = { start: '', end: '' },
+  setCustomDates
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('overview');
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Identifica se é uma visão de dia único
+  const isSingleDay = dateRange === 'today' || dateRange === 'yesterday' || (dateRange === 'custom' && customDates.start === customDates.end);
 
   const getDateRangeBounds = (range: DateRangeType, offsetDays: number = 0) => {
     const today = new Date();
@@ -63,6 +70,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
       case 'allTime':
         startDate = new Date(2020, 0, 1);
         break;
+      case 'custom':
+        // Lógica para Custom:
+        // Se offsetDays > 0, significa que estamos calculando o período anterior.
+        // Precisamos saber a duração do período customizado atual para subtrair.
+        if (customDates.start && customDates.end) {
+            const start = new Date(customDates.start + 'T00:00:00');
+            const end = new Date(customDates.end + 'T00:00:00');
+            
+            if (offsetDays > 0) {
+               // Calcula duração em dias
+               const duration = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+               // Retrocede 'duration' dias a partir do start
+               endDate = new Date(start);
+               endDate.setDate(endDate.getDate() - 1);
+               
+               startDate = new Date(endDate);
+               startDate.setDate(startDate.getDate() - duration + 1);
+            } else {
+               startDate = start;
+               endDate = end;
+            }
+        }
+        break;
     }
     return { startDate, endDate };
   };
@@ -88,7 +118,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (rangeType === 'yesterday') rangeDuration = 1;
     if (rangeType === 'thisMonth') rangeDuration = 30;
     
-    const effectiveOffset = offset > 0 ? rangeDuration : 0; 
+    // Para custom, o 'offset' no getDateRangeBounds já lida com o cálculo,
+    // então passamos um flag simples (1 para anterior, 0 para atual)
+    // ao invés de calcular dias fixos aqui.
+    
+    // Se não for custom, a lógica antiga de offset funciona.
+    const effectiveOffset = (rangeType !== 'custom' && offset > 0) ? rangeDuration : (offset > 0 ? 1 : 0);
+    
     const { startDate, endDate } = getDateRangeBounds(rangeType, effectiveOffset);
 
     const relevantAds = targetAds.filter(ad => {
@@ -123,17 +159,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return { totalRevenue, totalSpend, totalExtras, netProfit, roas, roi };
   };
 
-  const metrics = useMemo(() => calculateMetricsForRange(ads, expenses, dateRange, 0), [ads, expenses, recurringExpenses, selectedOfferId, dateRange]);
-  const prevMetrics = useMemo(() => calculateMetricsForRange(ads, expenses, dateRange, 1), [ads, expenses, recurringExpenses, selectedOfferId, dateRange]);
+  const metrics = useMemo(() => calculateMetricsForRange(ads, expenses, dateRange, 0), [ads, expenses, recurringExpenses, selectedOfferId, dateRange, customDates]);
+  const prevMetrics = useMemo(() => calculateMetricsForRange(ads, expenses, dateRange, 1), [ads, expenses, recurringExpenses, selectedOfferId, dateRange, customDates]);
 
   const chartData = useMemo(() => {
     const { startDate, endDate } = getDateRangeBounds(dateRange);
     const dataMap = new Map<string, any>();
     const loopDate = new Date(startDate);
-    while(loopDate <= endDate) {
-      const dateStr = loopDate.toISOString().split('T')[0];
-      dataMap.set(dateStr, { date: dateStr, revenue: 0, spend: 0, extras: 0, profit: 0 });
-      loopDate.setDate(loopDate.getDate() + 1);
+    
+    // Garante que o loop rode pelo menos uma vez para pegar o dia atual
+    if (isSingleDay) {
+        const dateStr = loopDate.toISOString().split('T')[0];
+        dataMap.set(dateStr, { date: dateStr, revenue: 0, spend: 0, extras: 0, profit: 0 });
+    } else {
+        while(loopDate <= endDate) {
+            const dateStr = loopDate.toISOString().split('T')[0];
+            dataMap.set(dateStr, { date: dateStr, revenue: 0, spend: 0, extras: 0, profit: 0 });
+            loopDate.setDate(loopDate.getDate() + 1);
+        }
     }
 
     ads.forEach(ad => {
@@ -149,13 +192,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
       expenses.forEach(exp => {
         if (dataMap.has(exp.date)) dataMap.get(exp.date).extras += exp.amount;
       });
-      dataMap.forEach((val, key) => {
-        const dateObj = new Date(key + 'T12:00:00');
-        const dayOfMonth = dateObj.getDate();
-        recurringExpenses.forEach(re => {
-          if (re.dayOfMonth === dayOfMonth) val.extras += re.amount;
-        });
-      });
+      // Lógica de recorrentes simplificada para gráfico
+      if (isSingleDay) {
+          const dateStr = loopDate.toISOString().split('T')[0];
+          const dateObj = new Date(dateStr + 'T12:00:00');
+          const dayOfMonth = dateObj.getDate();
+           recurringExpenses.forEach(re => {
+            if (re.dayOfMonth === dayOfMonth && dataMap.has(dateStr)) {
+                dataMap.get(dateStr).extras += re.amount;
+            }
+          });
+      } else {
+          dataMap.forEach((val, key) => {
+            const dateObj = new Date(key + 'T12:00:00');
+            const dayOfMonth = dateObj.getDate();
+            recurringExpenses.forEach(re => {
+              if (re.dayOfMonth === dayOfMonth) val.extras += re.amount;
+            });
+          });
+      }
     }
 
     return Array.from(dataMap.values()).map(day => {
@@ -166,7 +221,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
         dateFormatted: `${dayStr}/${month}`
       };
     }).sort((a, b) => a.date.localeCompare(b.date));
-  }, [ads, expenses, recurringExpenses, selectedOfferId, dateRange]);
+  }, [ads, expenses, recurringExpenses, selectedOfferId, dateRange, isSingleDay, customDates]);
+
+  // Dados transformados para o gráfico de barras de dia único
+  const singleDayChartData = useMemo(() => {
+    if (!isSingleDay || chartData.length === 0) return [];
+    const day = chartData[0];
+    return [
+        { name: 'Faturamento', value: day.revenue, color: '#10b981' },
+        { name: 'Investimento', value: day.spend, color: '#3b82f6' },
+        { name: 'Lucro Líquido', value: day.profit, color: day.profit >= 0 ? '#6366f1' : '#f43f5e' }
+    ];
+  }, [chartData, isSingleDay]);
 
   const handleGeminiAnalysis = async () => {
     setIsAnalyzing(true);
@@ -191,8 +257,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 animate-fade-in pb-20">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center bg-white p-4 rounded-[2rem] border border-gray-200 shadow-sm">
-        <div className="lg:col-span-4 flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start bg-white p-4 rounded-[2rem] border border-gray-200 shadow-sm">
+        <div className="lg:col-span-4 flex items-center gap-3 bg-gray-50 px-4 py-3 rounded-2xl border border-gray-100 h-[60px]">
            <div className="p-2 bg-white rounded-lg text-indigo-600 shadow-sm"><Filter size={16}/></div>
            <div className="flex-1">
               <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest">Produto / Oferta</label>
@@ -208,32 +274,54 @@ export const Dashboard: React.FC<DashboardProps> = ({
            <ChevronDown size={14} className="text-gray-400"/>
         </div>
 
-        <div className="lg:col-span-5 flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
-           <div className="p-2 bg-white rounded-lg text-emerald-600 shadow-sm"><Calendar size={16}/></div>
-           <div className="flex-1">
-              <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest">Janela de Análise</label>
-              <select 
-                value={dateRange} 
-                onChange={(e) => setDateRange(e.target.value as DateRangeType)}
-                className="w-full bg-transparent border-none text-sm font-black text-gray-900 focus:ring-0 cursor-pointer appearance-none uppercase"
-              >
-                <option value="today">HOJE</option>
-                <option value="yesterday">ONTEM</option>
-                <option value="last3days">ÚLTIMOS 3 DIAS</option>
-                <option value="last7days">ÚLTIMOS 7 DIAS</option>
-                <option value="last30days">ÚLTIMOS 30 DIAS</option>
-                <option value="thisMonth">ESTE MÊS</option>
-                <option value="allTime">TODO O PERÍODO</option>
-              </select>
-           </div>
-           <ChevronDown size={14} className="text-gray-400"/>
+        <div className="lg:col-span-5 flex flex-col gap-2">
+            <div className="flex items-center gap-3 bg-gray-50 px-4 py-3 rounded-2xl border border-gray-100 h-[60px]">
+                <div className="p-2 bg-white rounded-lg text-emerald-600 shadow-sm"><Calendar size={16}/></div>
+                <div className="flex-1">
+                    <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest">Janela de Análise</label>
+                    <select 
+                        value={dateRange} 
+                        onChange={(e) => setDateRange(e.target.value as DateRangeType)}
+                        className="w-full bg-transparent border-none text-sm font-black text-gray-900 focus:ring-0 cursor-pointer appearance-none uppercase"
+                    >
+                        <option value="today">HOJE</option>
+                        <option value="yesterday">ONTEM</option>
+                        <option value="last3days">ÚLTIMOS 3 DIAS</option>
+                        <option value="last7days">ÚLTIMOS 7 DIAS</option>
+                        <option value="last30days">ÚLTIMOS 30 DIAS</option>
+                        <option value="thisMonth">ESTE MÊS</option>
+                        <option value="allTime">TODO O PERÍODO</option>
+                        <option value="custom">PERSONALIZADO</option>
+                    </select>
+                </div>
+                <ChevronDown size={14} className="text-gray-400"/>
+            </div>
+            
+            {/* Seletor Customizado Condicional */}
+            {dateRange === 'custom' && setCustomDates && (
+                <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl animate-fade-in border border-indigo-100">
+                    <input 
+                        type="date" 
+                        value={customDates.start}
+                        onChange={(e) => setCustomDates({...customDates, start: e.target.value})}
+                        className="bg-transparent border-none text-xs font-bold text-indigo-700 p-0 focus:ring-0 w-24"
+                    />
+                    <ArrowRight size={12} className="text-indigo-400"/>
+                    <input 
+                        type="date" 
+                        value={customDates.end}
+                        onChange={(e) => setCustomDates({...customDates, end: e.target.value})}
+                        className="bg-transparent border-none text-xs font-bold text-indigo-700 p-0 focus:ring-0 w-24"
+                    />
+                </div>
+            )}
         </div>
 
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3 h-[60px]">
           <button
             onClick={handleGeminiAnalysis}
             disabled={isAnalyzing}
-            className="w-full flex items-center justify-center gap-2 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black transition-all disabled:opacity-50 shadow-xl shadow-gray-200"
+            className="w-full h-full flex items-center justify-center gap-2 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black transition-all disabled:opacity-50 shadow-xl shadow-gray-200"
           >
             <Sparkles size={16} className="text-indigo-400" />
             {isAnalyzing ? 'Processando...' : 'Insights Sênior AI'}
@@ -305,14 +393,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="bg-white border border-gray-200 rounded-[2.5rem] p-10 shadow-sm min-h-[500px]">
         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-10">
-          {viewMode === 'overview' && 'Gráfico de Tração (Receita x Gasto)'}
-          {viewMode === 'traffic_only' && 'Eficiência Comercial (ROAS)'}
-          {viewMode === 'net_profit' && 'Fluxo de Lucratividade'}
+          {isSingleDay 
+            ? `Análise Diária: ${dateRange === 'today' ? 'Hoje' : dateRange === 'yesterday' ? 'Ontem' : customDates.start.split('-').reverse().join('/')}`
+            : viewMode === 'overview' ? 'Gráfico de Tração (Receita x Gasto)'
+            : viewMode === 'traffic_only' ? 'Eficiência Comercial (ROAS)'
+            : 'Fluxo de Lucratividade'
+          }
         </h3>
         
         <div className="h-[400px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              {viewMode === 'overview' ? (
+              {isSingleDay ? (
+                 <BarChart data={singleDayChartData} barSize={80}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="name" stroke="#94a3b8" tick={{fontSize: 12, fontWeight: 'bold'}} axisLine={false} tickLine={false} dy={10} />
+                    <YAxis stroke="#94a3b8" tick={{fontSize: 10, fontWeight: 'bold'}} tickFormatter={(val) => `R$${val}`} axisLine={false} tickLine={false} />
+                    <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold' }} formatter={(val: number) => formatCurrency(val)} />
+                    <Bar dataKey="value" radius={[12, 12, 0, 0]}>
+                      {singleDayChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                 </BarChart>
+              ) : viewMode === 'overview' ? (
                  <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
