@@ -87,4 +87,4 @@ export interface Project {
 
 export type ViewMode = 'overview' | 'traffic_only' | 'net_profit';
 
-export type DateRangeType = 'today' | 'yesterday' | 'last3days' | 'last7days' | 'last30days' | 'thisMonth' | 'allTime';
+export type DateRangeType = 'today' | 'yesterday' | 'last3days' | 'last7days' | 'last30days' | 'thisMonth' | 'allTime' | 'custom';
